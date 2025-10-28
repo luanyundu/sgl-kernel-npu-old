@@ -4,12 +4,6 @@
 #include <pybind11/stl.h>
 
 #include "deep_ep.hpp"
-#include "config.hpp"
-#include "event.hpp"
-
-#ifndef TORCH_EXTENSION_NAME
-#define TORCH_EXTENSION_NAME deep_ep_cpp
-#endif
 
 namespace py = pybind11;
 

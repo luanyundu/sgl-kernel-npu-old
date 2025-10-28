@@ -5,6 +5,7 @@
 #include <acl/acl_base.h>
 #include <acl/acl_rt.h>
 #include <c10/util/Exception.h>
+#include <c10/core/DeviceType.h>
 #include <torch/extension.h>
 #include <dlfcn.h>
 #include <torch_npu/csrc/framework/utils/CalcuOpUtil.h>

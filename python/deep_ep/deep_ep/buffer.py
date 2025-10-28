@@ -408,7 +408,8 @@ class Buffer:
 
         # Launch the kernel
         recv_x, recv_topk_weights, event = self.runtime.intranode_combine(
-            x, topk_idx, topk_weights_ori, src_idx, send_head, combine_send_cost_stats
+            x, topk_idx, topk_weights_ori, src_idx, send_head, combine_send_cost_stats,
+            previous_event, async_finish, allocate_on_comm_stream,
         )
         return recv_x, recv_topk_weights, EventOverlap(event)
 

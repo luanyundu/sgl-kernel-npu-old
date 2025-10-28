@@ -11,6 +11,10 @@
 #include "config.hpp"
 #include "event.hpp"
 
+#ifndef TORCH_EXTENSION_NAME
+#define TORCH_EXTENSION_NAME deep_ep_cpp
+#endif
+
 namespace deep_ep {
 
 struct Buffer {
@@ -36,6 +40,9 @@ private:
     int device_id;
 
     HcclComm ep_comm;
+
+    // Stream for communication
+    c10_npu::NPUStream comm_stream;
 
     bool available = false;
 
@@ -68,7 +75,8 @@ public:
     std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<EventHandle>>
     intranode_combine(const torch::Tensor &x, const torch::Tensor &topk_idx,
                       const std::optional<torch::Tensor> &topk_weights, const torch::Tensor &src_idx,
-                      const torch::Tensor &send_head, const std::optional<at::Tensor> &combine_send_cost_stats);
+                      const torch::Tensor &send_head, const std::optional<at::Tensor> &combine_send_cost_stats,
+                      std::optional<EventHandle> &previous_event, bool async, bool allocate_on_comm_stream);
 
     std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Tensor, std::optional<EventHandle>,
                std::optional<std::function<void()>>>

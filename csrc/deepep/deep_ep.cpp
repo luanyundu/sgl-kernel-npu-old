@@ -1,11 +1,8 @@
 #include <memory>
 #include <cmath>
-#include <pybind11/functional.h>
 
-#include "hccl/hccl.h"
 #include "exception.hpp"
 #include "deep_ep.hpp"
-#include "pytorch_npu_helper.hpp"
 
 namespace deep_ep {
 constexpr int PADDING_SIZE = 3;
@@ -20,7 +17,8 @@ Buffer::Buffer(int64_t rank, int64_t num_ranks, int64_t num_nvl_bytes, int64_t n
       num_nvl_bytes(num_nvl_bytes),
       num_rdma_bytes(num_rdma_bytes),
       low_latency_mode(low_latency_mode),
-      moe_all_to_all_group_name(moe_all_to_all_group_name)
+      moe_all_to_all_group_name(moe_all_to_all_group_name),
+      comm_stream(c10_npu::getNPUStreamFromPool())
 {
     rdma_rank = rank;
     EP_HOST_ASSERT(0 <= rank and rank < num_ranks);
@@ -35,7 +33,6 @@ Buffer::Buffer(int64_t rank, int64_t num_ranks, int64_t num_nvl_bytes, int64_t n
     } else {
         EP_HOST_ASSERT(moe_all_to_all_group_name.size() < HCOMM_NAME_LEN);
     }
-
     this->shared_expert_rank_num = get_value_from_env("MOE_SHARED_EXPERT_RANK_NUM", 0);
 }
 
@@ -53,6 +50,21 @@ Buffer::get_dispatch_layout(const torch::Tensor &topk_idx, int num_experts, std:
     EP_HOST_ASSERT(topk_idx.dim() == 2);
     EP_HOST_ASSERT(topk_idx.is_contiguous());
     EP_HOST_ASSERT(num_experts > 0);
+
+    // Allocate all tensors on comm stream if set
+    // NOTES: do not allocate tensors upfront!
+    auto compute_stream = c10_npu::getCurrentNPUStream();
+    if (allocate_on_comm_stream) {
+        EP_HOST_ASSERT(previous_event.has_value() and async);
+        c10_npu::setCurrentNPUStream(comm_stream);
+    }
+
+    // Wait previous tasks to be finished
+    if (previous_event.has_value()) {
+        stream_wait(comm_stream, previous_event.value());
+    } else {
+        stream_wait(comm_stream, compute_stream);
+    }
 
     this->new_topk_idx = topk_idx;
     // for padding
@@ -84,6 +96,15 @@ Buffer::get_dispatch_layout(const torch::Tensor &topk_idx, int num_experts, std:
 
     std::optional<torch::Tensor> num_tokens_per_rdma_rank = std::nullopt;
     std::optional<EventHandle> output_event = std::nullopt;
+    if (async) {
+        output_event = EventHandle(comm_stream);
+    } else {
+        stream_wait(compute_stream, comm_stream);
+    }
+    // Switch back compute stream
+    if (allocate_on_comm_stream)
+        c10_npu::setCurrentNPUStream(compute_stream);
+
     auto is_token_in_rank_bool = is_token_in_rank.to(at::kBool);
 
     return std::make_tuple(num_tokens_per_rank, num_tokens_per_rdma_rank, num_tokens_per_expert, is_token_in_rank_bool,
@@ -179,6 +200,21 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
         EP_HOST_ASSERT(dispatch_wait_recv_cost_stats->dim() == 1 and dispatch_wait_recv_cost_stats->is_contiguous());
         EP_HOST_ASSERT(dispatch_wait_recv_cost_stats->size(0) == num_ranks);
         dispatch_wait_recv_cost_stats_out = dispatch_wait_recv_cost_stats.value();
+    }
+
+    // Allocate all tensors on comm stream if set
+    // NOTES: do not allocate tensors upfront!
+    auto compute_stream = c10_npu::getCurrentNPUStream();
+    if (allocate_on_comm_stream) {
+        EP_HOST_ASSERT(previous_event.has_value() and async);
+        c10_npu::setCurrentNPUStream(comm_stream);
+    }
+
+    // Wait previous tasks to be finished
+    if (previous_event.has_value()) {
+        stream_wait(comm_stream, previous_event.value());
+    } else {
+        stream_wait(comm_stream, compute_stream);
     }
 
     int send_per_group = 3;  // (send_to_expert_num, send_to_expert_offset, send_rank_tokens)
@@ -288,12 +324,21 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
         recv_topk_idx = at::empty({total_recv_tokens, num_topk}, topk_idx->options());
         recv_topk_weights = at::empty({total_recv_tokens, num_topk}, topk_weights->options());
     }
-    // Wait streams
-    std::optional<EventHandle> event;
 
     auto rank_prefix_matrix = at::empty({num_ranks, num_ranks}, at::dtype(at::kInt).device(x.device()));
     auto channel_prefix_matrix = at::empty({num_ranks, num_channels}, at::dtype(at::kInt).device(x.device()));
     auto recv_channel_prefix_matrix = at::empty({num_ranks, num_channels}, at::dtype(at::kInt).device(x.device()));
+
+    // Wait streams
+    std::optional<EventHandle> event;
+    if (async) {
+        event = EventHandle(comm_stream);
+    } else {
+        stream_wait(compute_stream, comm_stream);
+    }
+    // Switch back compute stream
+    if (allocate_on_comm_stream)
+        c10_npu::setCurrentNPUStream(compute_stream);
 
     // Return values
     return {expandx_out,
@@ -317,7 +362,8 @@ void Buffer::clean_low_latency_buffer(int num_max_dispatch_tokens_per_rank, int 
 std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<EventHandle>>
 Buffer::intranode_combine(const torch::Tensor &x, const torch::Tensor &topk_idx,
                           const std::optional<torch::Tensor> &topk_weights, const torch::Tensor &src_idx,
-                          const torch::Tensor &send_head, const std::optional<at::Tensor> &combine_send_cost_stats)
+                          const torch::Tensor &send_head, const std::optional<at::Tensor> &combine_send_cost_stats,
+                          std::optional<EventHandle> &previous_event, bool async, bool allocate_on_comm_stream)
 {
     EP_HOST_ASSERT(x.dim() == 2 and x.is_contiguous());
     at::Tensor recv_x = x;
@@ -363,6 +409,21 @@ Buffer::intranode_combine(const torch::Tensor &x, const torch::Tensor &topk_idx,
         combine_send_cost_stats_out = combine_send_cost_stats.value();
     }
 
+    // Allocate all tensors on comm stream if set
+    // NOTES: do not allocate tensors upfront!
+    auto compute_stream = c10_npu::getCurrentNPUStream();
+    if (allocate_on_comm_stream) {
+        EP_HOST_ASSERT(previous_event.has_value() and async);
+        c10_npu::setCurrentNPUStream(comm_stream);
+    }
+
+    // Wait previous tasks to be finished
+    if (previous_event.has_value()) {
+        stream_wait(comm_stream, previous_event.value());
+    } else {
+        stream_wait(comm_stream, compute_stream);
+    }
+
     int64_t hidden = static_cast<int>(recv_x.size(1));
     at::Tensor tp_send_counts = at::empty({1}, at::dtype(at::kInt).device(device));
     int64_t tp_world_size = 1;
@@ -381,7 +442,6 @@ Buffer::intranode_combine(const torch::Tensor &x, const torch::Tensor &topk_idx,
     // Combine data
     auto combined_x = torch::empty({expert_scales.size(0), hidden}, x.options());
     std::optional<torch::Tensor> recv_topk_weights;
-    std::optional<EventHandle> event;
 
     EXEC_NPU_CMD(aclnnCamMoeCombineNormal, recv_x, token_src_info, ep_send_counts, expert_scales, tp_send_counts,
                  hcom_ep_name, num_ranks, rank, hcom_ep_name, tp_world_size, tp_rankId, moe_expert_number, global_bs,
@@ -395,6 +455,17 @@ Buffer::intranode_combine(const torch::Tensor &x, const torch::Tensor &topk_idx,
         }
         is_padding = false;
     }
+
+    // Wait streams
+    std::optional<EventHandle> event;
+    if (async) {
+        event = EventHandle(comm_stream);
+    } else {
+        stream_wait(compute_stream, comm_stream);
+    }
+    // Switch back compute stream
+    if (allocate_on_comm_stream)
+        c10_npu::setCurrentNPUStream(compute_stream);
 
     return {combined_x, recv_topk_weights, event};
 }
