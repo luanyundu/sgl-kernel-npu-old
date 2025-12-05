@@ -424,15 +424,15 @@ static bool CheckAttrs(gert::TilingContext *context, CamMoeCombineNormalTilingDa
     OP_LOGD(nodeName, "CamMoeCombineNormal *globalBsPtr = %ld, bs = %ld, epWorldSize = %u\n", *globalBsPtr,
             topkWeightsDim0, epWorldSize);
 
-    OP_TILING_CHECK(
-        (*globalBsPtr != 0) && ((*globalBsPtr < static_cast<int64_t>(epWorldSize) * topkWeightsDim0) ||
-                                ((*globalBsPtr) % (static_cast<int64_t>(epWorldSize)) != 0)),
-        OP_LOGE(nodeName,
-                "globalBS is invalid, only "
-                "support 0 or maxBs(maxBs is the largest bs on all ranks) * epWorldSize, but got globalBS=%ld, "
-                "bs=%ld, epWorldSize=%u.",
-                *globalBsPtr, topkWeightsDim0, epWorldSize),
-        return false);
+    // OP_TILING_CHECK(
+    //     (*globalBsPtr != 0) && ((*globalBsPtr < static_cast<int64_t>(epWorldSize) * topkWeightsDim0) ||
+    //                             ((*globalBsPtr) % (static_cast<int64_t>(epWorldSize)) != 0)),
+    //     OP_LOGE(nodeName,
+    //             "globalBS is invalid, only "
+    //             "support 0 or maxBs(maxBs is the largest bs on all ranks) * epWorldSize, but got globalBS=%ld, "
+    //             "bs=%ld, epWorldSize=%u.",
+    //             *globalBsPtr, topkWeightsDim0, epWorldSize),
+    //     return false);
 
     tilingData.camMoeCombineNormalInfo.globalBs = static_cast<uint32_t>(*globalBsPtr);
     if (*globalBsPtr == 0) {
