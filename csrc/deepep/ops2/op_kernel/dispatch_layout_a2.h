@@ -104,10 +104,15 @@ public:
                                             serverNum_ + MAX_BATCH_SIZE * (1 + 2 * serverNum_));
             expertRankTokenIdxGM_.SetGlobalBuffer((__gm__ T *)notifySendData + numExperts_ + serverNum_ +
                                                   MAX_BATCH_SIZE * (1 + 2 * serverNum_ + numExperts_));
+            rankTokensGM_.SetGlobalBuffer((__gm__ T *)notifySendData + numExperts_ * (1 + MAX_BATCH_SIZE) + serverNum_ +
+                                          MAX_BATCH_SIZE * (1 + 2 * serverNum_ + numExperts_));
+            rankTokensGM_.SetValue(0, numTokens_);
+            AscendC::DataCacheCleanAndInvalid<T, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(rankTokensGM_);
             tempExpertGM_.SetGlobalBuffer((__gm__ T *)notifySendData + numExperts_ + serverNum_ +
                                           MAX_BATCH_SIZE * (1 + 2 * serverNum_));
             tempServerGM_.SetGlobalBuffer((__gm__ T *)notifySendData + numExperts_ * (1 + aivNum_) + serverNum_ +
                                           MAX_BATCH_SIZE * (1 + 2 * serverNum_));
+
             sendTokenIdxSmallGM_.SetGlobalBuffer((__gm__ T *)(sendTokenIdxSmall + topkIdxOffset / 2));
         }
     }
@@ -270,10 +275,10 @@ private:
             }
             DataCopy(intermediateExpertTensor, sendTokenIdxTensor[i * numExperts_], numExperts_);
             PipeBarrier<PIPE_V>();
-            AscendC::Mul(sendTokenIdxTensor[i * numExperts_], prefixCountPerExpertTensor, intermediateExpertTensor,
-                         numExperts_);
-            PipeBarrier<PIPE_V>();
-            DataCopy(tempExpertTensor, sendTokenIdxTensor[i * numExperts_], numExperts_);
+            // AscendC::Mul(sendTokenIdxTensor[i * numExperts_], prefixCountPerExpertTensor, intermediateExpertTensor,
+            //              numExperts_);
+            // PipeBarrier<PIPE_V>();
+            DataCopy(tempExpertTensor, prefixCountPerExpertTensor, numExperts_);
             PipeBarrier<PIPE_V>();
             AscendC::Add(sendTokenIdxTensor[i * numExperts_], tempExpertTensor, intermediateExpertTensor, numExperts_);
             PipeBarrier<PIPE_V>();
@@ -344,6 +349,7 @@ private:
     GlobalTensor<T> localTokenServerNumGM_;
     GlobalTensor<T> expertRankTokenIdxGM_;
     GlobalTensor<T> sendTokenIdxGM_;
+    GlobalTensor<T> rankTokensGM_;
     GlobalTensor<T> tempExpertGM_;
     GlobalTensor<T> tempServerGM_;
     GlobalTensor<T> sendTokenIdxSmallGM_;
