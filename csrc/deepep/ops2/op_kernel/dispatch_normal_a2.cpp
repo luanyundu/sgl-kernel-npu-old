@@ -72,7 +72,7 @@ extern "C" __global__ __aicore__ void dispatch_normal_a2(
         // NotifyDispatchA2<int> opKernel(rank, rankSize, extraFlag);
         // opKernel.Init(KERNELS_ARGS_CALL_A2_ALL2ALL());
         // opKernel.Process();
-        CamMoeDistributeDispatchA2Layered<bfloat16_t, bfloat16_t, false, false, false> op;
+        MoeDistributeDispatchA2Pipeline<bfloat16_t, bfloat16_t, false, false, false> op;
         op.Init(x, expertIds, scales, expertScales, tokenServerIdx, tokenServerCnt, epRankTokenCnt,
                 srcOffsetRankTokenIdx, dstOffsetRankTokenIdx, recvX, dynamicScalesOut, expandIdxOut, expertTokenNumsOut,
                 epRecvCountOut, expandScalesOut, workspace, &pipe, tiling);
@@ -81,7 +81,7 @@ extern "C" __global__ __aicore__ void dispatch_normal_a2(
         // NotifyDispatchA2<int> opKernel(rank, rankSize, extraFlag);
         // opKernel.Init(KERNELS_ARGS_CALL_A2_ALL2ALL());
         // opKernel.Process();
-        CamMoeDistributeDispatchA2Layered<bfloat16_t, bfloat16_t, false, false, false> op;
+        MoeDistributeDispatchA2Pipeline<bfloat16_t, bfloat16_t, false, false, false> op;
         op.Init(x, expertIds, scales, expertScales, tokenServerIdx, tokenServerCnt, epRankTokenCnt,
                 srcOffsetRankTokenIdx, dstOffsetRankTokenIdx, recvX, dynamicScalesOut, expandIdxOut, expertTokenNumsOut,
                 epRecvCountOut, expandScalesOut, workspace, &pipe, tiling);
@@ -90,7 +90,7 @@ extern "C" __global__ __aicore__ void dispatch_normal_a2(
         // NotifyDispatchA2<int> opKernel(rank, rankSize, extraFlag);
         // opKernel.Init(KERNELS_ARGS_CALL_A2_ALL2ALL());
         // opKernel.Process();
-        CamMoeDistributeDispatchA2Layered<bfloat16_t, bfloat16_t, false, false, false> op;
+        MoeDistributeDispatchA2Pipeline<bfloat16_t, bfloat16_t, false, false, false> op;
         op.Init(x, expertIds, scales, expertScales, tokenServerIdx, tokenServerCnt, epRankTokenCnt,
                 srcOffsetRankTokenIdx, dstOffsetRankTokenIdx, recvX, dynamicScalesOut, expandIdxOut, expertTokenNumsOut,
                 epRecvCountOut, expandScalesOut, workspace, &pipe, tiling);
