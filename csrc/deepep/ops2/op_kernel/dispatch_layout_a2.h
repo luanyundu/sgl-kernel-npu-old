@@ -275,9 +275,9 @@ private:
             }
             DataCopy(intermediateExpertTensor, sendTokenIdxTensor[i * numExperts_], numExperts_);
             PipeBarrier<PIPE_V>();
-            // AscendC::Mul(sendTokenIdxTensor[i * numExperts_], prefixCountPerExpertTensor, intermediateExpertTensor,
-            //              numExperts_);
-            // PipeBarrier<PIPE_V>();
+            AscendC::Mul(sendTokenIdxTensor[i * numExperts_], prefixCountPerExpertTensor, intermediateExpertTensor,
+                         numExperts_);
+            PipeBarrier<PIPE_V>();
             DataCopy(tempExpertTensor, prefixCountPerExpertTensor, numExperts_);
             PipeBarrier<PIPE_V>();
             AscendC::Add(sendTokenIdxTensor[i * numExperts_], tempExpertTensor, intermediateExpertTensor, numExperts_);
